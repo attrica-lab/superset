@@ -141,6 +141,22 @@ test('createVerboseMap creates verbose_map from both columns and metrics', () =>
   });
 });
 
+test('createVerboseMap lets a column win a name collision with a metric', () => {
+  // A dataset can hold a column and a metric with the same name -- uniqueness is
+  // only enforced within each list. Both end up in one flat map, so one label has
+  // to win. Columns win, matching `SqlaTable.data_for_slices`, which builds the
+  // verbose_map the dashboard's own charts already render with. Otherwise an
+  // unused metric could relabel a column the chart actually selected.
+  const dataset = {
+    columns: [{ column_name: 'revenue', verbose_name: 'Revenue' }],
+    metrics: [{ metric_name: 'revenue', verbose_name: 'Revenue %' }],
+  } as Dataset;
+
+  const verboseMap = createVerboseMap(dataset);
+
+  expect(verboseMap).toEqual({ revenue: 'Revenue' });
+});
+
 test('createVerboseMap handles undefined dataset', () => {
   const verboseMap = createVerboseMap(undefined);
   expect(verboseMap).toEqual({});
@@ -317,6 +333,9 @@ test('useDatasetDrillInfo fetches dataset via extension when extension and formD
   mockExtension.mockResolvedValue({
     json: { result: mockDataset },
   } as any);
+  mockedCachedSupersetGet.mockResolvedValue({
+    json: { result: mockDataset },
+  } as any);
 
   const { result } = renderHook(() =>
     useDatasetDrillInfo(123, 456, mockFormData),
@@ -341,9 +360,77 @@ test('useDatasetDrillInfo fetches dataset via extension when extension and formD
     },
   });
   expect(result.current.error).toBeNull();
+});
 
-  // Verify cachedSupersetGet was NOT called (extension path bypasses REST API)
-  expect(mockedCachedSupersetGet).not.toHaveBeenCalled();
+test('useDatasetDrillInfo labels come from the API even when the extension supplies drill-by options', async () => {
+  setupExtensionMock();
+
+  const mockFormData = { viz_type: 'table', datasource: '123__table' };
+  // The extension contract only covers drill-by options, so a conforming
+  // implementation may return dimensions alone.
+  const extensionResult = {
+    id: 123,
+    columns: [{ column_name: 'city', verbose_name: 'City', groupby: true }],
+  };
+  // The API is the only source that promises the whole dataset.
+  const apiResult = {
+    id: 123,
+    columns: [
+      { column_name: 'city', verbose_name: 'City', groupby: true },
+      { column_name: 'revenue', verbose_name: 'Revenue', groupby: false },
+    ],
+    metrics: [{ metric_name: 'sum__num', verbose_name: 'Yearly Total' }],
+  };
+
+  mockExtension.mockResolvedValue({ json: { result: extensionResult } } as any);
+  mockedCachedSupersetGet.mockResolvedValue({
+    json: { result: apiResult },
+  } as any);
+
+  const { result } = renderHook(() =>
+    useDatasetDrillInfo(123, 456, mockFormData),
+  );
+
+  await waitFor(() => {
+    expect(result.current.status).toBe('complete');
+  });
+
+  // Labels cover everything the chart may select...
+  expect(result.current.result?.verbose_map).toEqual({
+    city: 'City',
+    revenue: 'Revenue',
+    sum__num: 'Yearly Total',
+  });
+  // ...while drill-by options still come from the extension.
+  expect(result.current.result?.columns).toEqual(extensionResult.columns);
+});
+
+test('useDatasetDrillInfo keeps extension drill-by options when the label fetch fails', async () => {
+  setupExtensionMock();
+
+  const mockFormData = { viz_type: 'table', datasource: '123__table' };
+  const extensionResult = {
+    id: 123,
+    columns: [{ column_name: 'city', verbose_name: 'City', groupby: true }],
+  };
+
+  mockExtension.mockResolvedValue({ json: { result: extensionResult } } as any);
+  // A deployment may register the extension precisely because the REST endpoint
+  // is unavailable to it. Drill-by works there today and must keep working.
+  mockedCachedSupersetGet.mockRejectedValue(new Error('403'));
+
+  const { result } = renderHook(() =>
+    useDatasetDrillInfo(123, 456, mockFormData),
+  );
+
+  await waitFor(() => {
+    expect(result.current.status).toBe('complete');
+  });
+
+  expect(mockedCachedSupersetGet).toHaveBeenCalled();
+  expect(result.current.result?.columns).toEqual(extensionResult.columns);
+  expect(result.current.result?.verbose_map).toEqual({ city: 'City' });
+  expect(result.current.error).toBeNull();
 });
 
 test('useDatasetDrillInfo handles extension throwing error', async () => {
