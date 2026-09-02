@@ -143,3 +143,6 @@ PROJECT.md
 oxc-custom-build/
 *.code-workspace
 *.duckdb
+
+# Attrica: local recall log written by the why hook
+.attrica/

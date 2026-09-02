@@ -312,3 +312,7 @@ pre-commit run eslint            # Frontend linting
 ---
 
 **LLM Note**: This codebase is actively modernizing toward full TypeScript and type safety. Always run `pre-commit run` to validate changes. Follow the ongoing refactors section to avoid deprecated patterns.
+
+## Decision records
+
+- **Decision records:** when a decision settles — an approach chosen over alternatives, a constraint accepted, something deliberately not done — record it as a why record in `docs/decisions/` using the `capture-decision` skill ([`.claude/skills/capture-decision/SKILL.md`](.claude/skills/capture-decision/SKILL.md)). One decision, one file, a minute of writing.
