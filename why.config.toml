@@ -1,0 +1,5 @@
+# why.config.toml — read by Attrica to find this repository's decision records.
+# The bare filename `Whyfile` is reserved by the spec (REC-001) and must not be used.
+
+[intent_sources]
+records = ["docs/decisions"]
